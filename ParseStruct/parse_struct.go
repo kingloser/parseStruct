@@ -1,4 +1,4 @@
-package parseStruct
+package ParseStruct
 
 import (
 	"github.com/fatih/structtag"
@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"io/ioutil"
 	"strings"
+	_ "fmt"
 )
 
 type StructFields []*ast.Field
