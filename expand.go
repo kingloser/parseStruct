@@ -286,10 +286,15 @@ func findKeyNode(node ast.Node, fset *token.FileSet) *ast.AssignStmt {
 			if st, ok := v.Rhs[0].(*ast.CallExpr); ok {
 				for index, data := range st.Args {
 					tmpPtr := data.(*ast.Ident).Obj
+					//  函数入参级别的捕获，需要将 入参 ----> 替换为函数内部的计算
 					if tmpPtr != nil && tmpPtr == ptrNode {
 						fmt.Println("函数级别捕获成功g", index)
 					}
 				}
+			}
+			if v.Rhs[0].(*ast.CallExpr).Fun.(*ast.Ident).Name == "test" {
+				md := v.Rhs[0].(*ast.CallExpr).Fun.(*ast.Ident).Obj
+				FuncNodeParse(md.Decl.(*ast.FuncDecl))
 			}
 		default:
 			fmt.Println("----》", dm)
@@ -367,6 +372,7 @@ func FuncNodeParse(node *ast.FuncDecl) map[interface{}]bool {
 								tmp := ExperParse(value)
 								if tmp != nil {
 									tmpObj[tmp] = true
+									fmt.Println("---> 抓取到内部的 obj")
 								}
 
 							}
