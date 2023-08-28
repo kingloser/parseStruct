@@ -23,6 +23,10 @@ type NodeStruct struct {
 	Extra   string      // 备用
 
 }
+type FuncInfo struct {
+	FuncName string // 函数名
+	Reciver  string // 函数接器
+}
 
 // 定义一个二维slice用来存储没有覆盖的行和列
 var section [][]int
@@ -53,9 +57,14 @@ var ff *token.FileSet
 // 执行ast  分析
 func astAnaly(codePath string) {
 	file := util.ScanProject("test/baidu/netdisk/pcs-go-pcsapi")
+	var module_name = "baidu/netdisk/pcs-go-pcsapi"
 	// fmt.Println("*****")
 	// 解析源文件
+	// funcScan := make(map[string]map[string])
 	fileMap := make(map[string][]string, 0)
+	// strFileMap := make(map[string][]FuncInfo, 0)
+	strFileMap := make(map[string]map[FuncInfo]bool, 0)
+
 	for _, codePath := range file {
 		fset := token.NewFileSet()
 		f, err := parser.ParseFile(fset, codePath, nil, 0)
@@ -65,7 +74,7 @@ func astAnaly(codePath string) {
 		}
 		var pac string
 		ast.Inspect(f, func(node ast.Node) bool {
-
+			//  进入一定会先 get package
 			switch v := node.(type) {
 
 			case *ast.File:
@@ -73,16 +82,36 @@ func astAnaly(codePath string) {
 			}
 			getLine(node, fset)
 
-			findKeyNode(node, fset, fileMap, pac)
+			findKeyNode(node, fset, fileMap, pac, strFileMap)
 
 			return true
 		})
 	}
-	for key, value := range fileMap {
+	// for key, value := range fileMap {
 
-		fmt.Println("所在的包，%v，包含的 import %v", key, value)
+	// 	// fmt.Println("所在的包，%v，包含的 import %v", key, value)
+	// 	m := make(map[string]bool)
+	// 	for _, v := range value {
+	// 		m[v] = true
+	// 		// fmt.Printf("第%d行，%v\n", index, v)
+	// 	}
+	// 	sets := []string{}
+	// 	for k, _ := range m {
+	// 		sets = append(sets, k)
+	// 	}
+	// 	fileMap[key] = sets
+	// }
+	// for key, value := range fileMap {
+	// 	fmt.Println("所在的包，%v，包含的 import %v", key, value)
+	// }
+	for key, value := range strFileMap {
+		fmt.Printf("所在的包 %v ，函数名包含", key)
+		// fmt.Println("所在的包，%v，包含的 import %v", key, value)
+		for k, _ := range value {
+			fmt.Printf(" 函数 %v ， 接收器 : %s ", k.FuncName, k.Reciver)
+		}
+		fmt.Println("\n")
 	}
-
 }
 
 // 根据node返回该节点的起止行，如果有
@@ -100,25 +129,43 @@ func getLine(node ast.Node, fset *token.FileSet) (error, int, int) {
 	return errors.New("-1"), -1, -1
 }
 
-func findKeyNode(node ast.Node, fset *token.FileSet, file map[string][]string, pac string) *ast.AssignStmt {
+func findKeyNode(node ast.Node, fset *token.FileSet, file map[string][]string, pac string, strFile map[string]map[FuncInfo]bool) *ast.AssignStmt {
 
 	switch v := node.(type) {
 
-	case *ast.File:
-		pac = astTool.GetFilePackage(v)
-		// _, ok := file[pac]
-		// if !ok {
-		// 	file[pac] = []string{""}
-		// }
+	// case *ast.File:
+	// 	pac = astTool.GetFilePackage(v)
+	// _, ok := file[pac]
+	// if !ok {
+	// 	file[pac] = []string{""}
+	// }
 	case *ast.FuncDecl:
 		if v.Name.Name != "" {
 			_, ok := file[pac]
 			fName := v.Name.Name
 			if !ok {
 				file[pac] = []string{v.Name.Name}
+				tmp := make(map[FuncInfo]bool, 0)
+				tmpF := FuncInfo{
+					FuncName: v.Name.Name,
+				}
+				tmpF.Reciver = astTool.GetRecv(v)
+				tmp[tmpF] = true
+
+				strFile[pac] = tmp
 			} else {
 				if v.Name.Name != "" {
 					file[pac] = append(file[pac], fName)
+					// strFile[pac] = append(strFile[pac], FuncInfo{FuncName: v.Name.Name})
+					// tmp := make(map[FuncInfo]bool, 0)
+					tmpF := FuncInfo{
+						FuncName: v.Name.Name,
+					}
+					tmpF.Reciver = astTool.GetRecv(v)
+					// tmp[tmpF] = true
+					strFile[pac][tmpF] = true
+					// strFile[pac] =
+
 				}
 
 			}
