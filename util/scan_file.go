@@ -21,10 +21,10 @@ func ScanProject(folderPath string) (proPath []string) {
 			}
 			return nil
 		}
-        if  !info.IsDir() && strings.Contains(info.Name(), ".go"){
-            proPath = append(proPath, path)
-        }
-		
+		if !info.IsDir() && strings.Contains(info.Name(), ".go") {
+			proPath = append(proPath, path)
+		}
+
 		// proPath = path
 		return nil
 	})

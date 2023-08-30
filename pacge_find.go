@@ -51,13 +51,13 @@ func main() {
 	astAnaly(codePathTmp)
 
 }
-
+var moduleName = "baidu/netdisk/pcs-go-pcsapi"
 var ff *token.FileSet
 
 // 执行ast  分析
 func astAnaly(codePath string) {
 	file := util.ScanProject("test/baidu/netdisk/pcs-go-pcsapi")
-	var module_name = "baidu/netdisk/pcs-go-pcsapi"
+	
 	// fmt.Println("*****")
 	// 解析源文件
 	// funcScan := make(map[string]map[string])
@@ -87,23 +87,7 @@ func astAnaly(codePath string) {
 			return true
 		})
 	}
-	// for key, value := range fileMap {
-
-	// 	// fmt.Println("所在的包，%v，包含的 import %v", key, value)
-	// 	m := make(map[string]bool)
-	// 	for _, v := range value {
-	// 		m[v] = true
-	// 		// fmt.Printf("第%d行，%v\n", index, v)
-	// 	}
-	// 	sets := []string{}
-	// 	for k, _ := range m {
-	// 		sets = append(sets, k)
-	// 	}
-	// 	fileMap[key] = sets
-	// }
-	// for key, value := range fileMap {
-	// 	fmt.Println("所在的包，%v，包含的 import %v", key, value)
-	// }
+	//   strFileMap  KEY 是包名，value map map中 key是函数名 + 接收器
 	for key, value := range strFileMap {
 		fmt.Printf("所在的包 %v ，函数名包含", key)
 		// fmt.Println("所在的包，%v，包含的 import %v", key, value)
@@ -112,6 +96,9 @@ func astAnaly(codePath string) {
 		}
 		fmt.Println("\n")
 	}
+
+	
+	
 }
 
 // 根据node返回该节点的起止行，如果有
@@ -172,7 +159,7 @@ func findKeyNode(node ast.Node, fset *token.FileSet, file map[string][]string, p
 		}
 
 	case *ast.ImportSpec:
-		fuc := astTool.GetPackageImport(v, "baidu/netdisk/pcs-go-pcsapi")
+		fuc := astTool.GetPackageImport(v, moduleName)
 		_, ok := file[pac]
 		if !ok {
 			// file[pac] = []string{fuc}
