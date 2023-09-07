@@ -27,6 +27,16 @@ type FuncInfo struct {
 	FuncName string // 函数名
 	Reciver  string // 函数接器
 }
+type Caller struct {
+	Package string // 包名
+	Func    string // 函数名
+	IsOOP   bool   // 是否为OOP函数
+	Method  string // 方法名
+}
+type CallerImport struct {
+	Rename string
+	Origin string
+}
 
 // 定义一个二维slice用来存储没有覆盖的行和列
 var section [][]int
@@ -61,15 +71,16 @@ var ff *token.FileSet
 
 // 执行ast  分析
 func astAnaly(codePath string) {
-	file := util.ScanProject("test/baidu/netdisk/pcs-go-pcsapi")
-	// file := util.ScanProject("test/baidu/netdisk/pcs-go-pcsapi/action/file/copy.go")
+	// file := util.ScanProject("test/baidu/netdisk/pcs-go-pcsapi")
+	file := util.ScanProject("test/baidu/netdisk/pcs-go-pcsapi/action/file/copy.go")
 	// fmt.Println("*****")
 	// 解析源文件
 	// funcScan := make(map[string]map[string])
 	fileMap := make(map[string][]string, 0)
 	// strFileMap := make(map[string][]FuncInfo, 0)
 	strFileMap := make(map[string]map[FuncInfo]bool, 0)
-
+	importMap := make(map[string]map[CallerImport]bool, 0)
+	callerMap := make(map[Caller]int)
 	for _, codePath := range file {
 		fset := token.NewFileSet()
 		f, err := parser.ParseFile(fset, codePath, nil, 0)
@@ -85,22 +96,30 @@ func astAnaly(codePath string) {
 				pac = astTool.GetFilePackage(v)
 			}
 			getLine(node, fset)
-			findKeyNode(node, fset, fileMap, pac, strFileMap)
-			getFuncCaller(node, fset)
+			//  文件级别扫描，扫描文件薄定型，函数，方法和接收器
+			findKeyNode(node, fset, fileMap, pac, strFileMap, importMap, codePath)
+			cal := getFuncCaller(node, fset)
+			callerMap[cal] = 1
 
 			return true
 		})
 	}
 	fmt.Println("-->解概率 析出的%v", calc/test)
 	//   strFileMap  KEY 是包名，value map map中 key是函数名 + 接收器
-	// for key, value := range strFileMap {
-	// 	fmt.Printf("所在的包 %v ，函数名包含", key)
-	// 	// fmt.Println("所在的包，%v，包含的 import %v", key, value)
-	// 	for k, _ := range value {
-	// 		fmt.Printf(" 函数 %v ， 接收器 : %s ", k.FuncName, k.Reciver)
-	// 	}
-	// 	fmt.Println("\n")
+	for key, value := range strFileMap {
+		fmt.Printf("所在的包 %v ，函数名包含", key)
+		// fmt.Println("所在的包，%v，包含的 import %v", key, value)
+		for k, _ := range value {
+			fmt.Printf(" 函数 %v ， 接收器 : %s ", k.FuncName, k.Reciver)
+		}
+		fmt.Println("\n")
+	}
+	// for key, value := range callerMap {
+	// 	fmt.Printf(" 调用的包%v ， 所在的函数：%v， 方法%v 接收器 : %v  \n", key.Package, key.Func, key.Method, value)
 	// }
+	for key, value := range fileMap {
+		fmt.Println(key, value)
+	}
 
 }
 
@@ -119,7 +138,7 @@ func getLine(node ast.Node, fset *token.FileSet) (error, int, int) {
 	return errors.New("-1"), -1, -1
 }
 
-func getFuncCaller(node ast.Node, fset *token.FileSet) {
+func getFuncCaller(node ast.Node, fset *token.FileSet) Caller {
 	switch v := node.(type) {
 	case *ast.CallExpr:
 		if v != nil {
@@ -131,7 +150,7 @@ func getFuncCaller(node ast.Node, fset *token.FileSet) {
 			// // fmt.Println(selExpr.Sel.Name)
 			// who, calll := scanSelectExpr(selExpr)
 
-			// obj := getFuncDefine(selExpr)
+			// obj := GetFuncDefine(selExpr)
 			// var who1 string
 			// if obj != nil {
 			// 	who1 , _  = scanObj(obj)
@@ -140,11 +159,12 @@ func getFuncCaller(node ast.Node, fset *token.FileSet) {
 
 			who, calll := scanSelectExpr(selExpr)
 
-			obj := getFuncDefine(selExpr)
+			obj := astTool.GetFuncDefine(selExpr)
 			var who1 string
 			if obj != nil {
 				// fmt.Println("---> 需要溯源，")
-				who1, _ = scanObj(obj)
+
+				who1, _ = astTool.ScanObj(obj)
 				// if  obj.Decl!=nil{
 
 				// }
@@ -164,14 +184,24 @@ func getFuncCaller(node ast.Node, fset *token.FileSet) {
 			if who == "" && who1 == "" {
 				calc = calc + 1
 			}
+
 			test = test + 1
+			var st Caller
+			if (who != "" || who1 != "") && calll != "" {
+				st.Package = who
+				st.Method = who1
+				st.Func = calll
+
+			}
+			return st
+
 			// // 提取函数名的定义部分
 
 		}
 	case *ast.SelectorExpr:
 		// who, calll := scanSelectExpr(v)
 
-		// obj := getFuncDefine(v)
+		// obj := GetFuncDefine(v)
 		// var who1 string
 		// if obj != nil {
 		// 	// fmt.Println("---> 需要溯源，")
@@ -194,35 +224,36 @@ func getFuncCaller(node ast.Node, fset *token.FileSet) {
 		// }
 
 	}
+	return Caller{}
 
 }
 
 func scanSelectExpr(node *ast.SelectorExpr) (string, string) {
 	var from string
 	var call string
-	call = getAstIdent(node.Sel)
+	call = astTool.GetAstIdent(node.Sel)
 	if id, ok := node.X.(*ast.Ident); ok {
-		from = getAstIdent(id)
+		from = astTool.GetAstIdent(id)
 		if id.Obj != nil {
 			from = id.Obj.Name
 		}
 	}
 	//   解决三级调用  ctx.L.Warn
-	// from = getThreeCall(node)
-	tmp := getThreeCall(node)
+	// from = GetThreeCall(node)
+	tmp := astTool.GetThreeCall(node)
 	if tmp != "" {
 		from = tmp
 	}
 	// if ppx, ok := node.X.(*ast.SelectorExpr); ok {
 	// 	if id, ok := ppx.X.(*ast.Ident); ok {
-	// 		from = getAstIdent(id)
+	// 		from = GetAstIdent(id)
 	// 		if id.Obj != nil {
 	// 			from = id.Obj.Name
 	// 		}
 	// 	}
 	// }
 	//   解决在定义期间调用  举例：  parentFileRevisionMeta, errGet := (&service.FileRevision{Ctx: ctx}).GetRevisionDetail(req.UserId, req.Path, req.ParentRevision)
-	tmp = getDefineCall(node)
+	tmp = astTool.GetDefineCall(node)
 	if tmp != "" {
 		from = tmp
 	}
@@ -232,9 +263,9 @@ func scanSelectExpr(node *ast.SelectorExpr) (string, string) {
 	// 			if ppx.Type != nil {
 	// 				if id, ok := ppx.Type.(*ast.SelectorExpr); ok {
 	// 					if i, ok := id.X.(*ast.Ident); ok {
-	// 						from = getAstIdent(i)
+	// 						from = GetAstIdent(i)
 	// 					}
-	// 					// from = getAstIdent(id)
+	// 					// from = GetAstIdent(id)
 	// 					// from = id.Obj.Name
 	// 				}
 	// 			}
@@ -248,150 +279,13 @@ func scanSelectExpr(node *ast.SelectorExpr) (string, string) {
 		return "", ""
 	}
 
-	call = getAstIdent(node.Sel)
+	call = astTool.GetAstIdent(node.Sel)
 
 	return from, call
 
 }
 
-// 解决在定义期间调用  举例：  parentFileRevisionMeta, errGet := (&service.FileRevision{Ctx: ctx}).GetRevisionDetail(req.UserId, req.Path, req.ParentRevision)
-func getDefineCall(node *ast.SelectorExpr) string {
-	// 解决三级调用 ctx.L.Warn
-	from := ""
-	parent, ok := node.X.(*ast.ParenExpr)
-	if !ok {
-		return from
-	}
-	unary, ok := parent.X.(*ast.UnaryExpr)
-	if !ok {
-		return from
-	}
-	composite, ok := unary.X.(*ast.CompositeLit)
-	if !ok || composite.Type == nil {
-		return from
-	}
-
-	if id, ok := composite.Type.(*ast.SelectorExpr); ok {
-		if i, ok := id.X.(*ast.Ident); ok {
-			from = getAstIdent(i)
-		}
-	}
-
-	return from
-}
-func getThreeCall(node *ast.SelectorExpr) string {
-	//   解决三级调用  ctx.L.Warn
-	var from string
-	if ppx, ok := node.X.(*ast.SelectorExpr); ok {
-		if id, ok := ppx.X.(*ast.Ident); ok {
-			if id.Obj != nil {
-				from = getObjName(id.Obj)
-			}
-		}
-	}
-	return from
-}
-
-func getObjName(node *ast.Object) string {
-	if node != nil {
-		return node.Name
-	}
-	return ""
-}
-
-//	func  getXExpr(node *ast.Ident) string{
-//		if  node.Obj!= nil{
-//			return node.
-//		}
-//	}
-func getFuncDefine(node *ast.SelectorExpr) *ast.Object {
-	if node.X == nil {
-		return nil
-	}
-	if ident, ok := node.X.(*ast.Ident); ok {
-
-		if ident.Obj != nil {
-			// scanObj(ident.Obj)
-			return ident.Obj
-		}
-	}
-	return nil
-
-}
-
-// 溯源，去查找，对象的定义的来源，其实就是制订了 对象来源于哪里，通过那个包来定义
-func scanObj(node *ast.Object) (packagesName string, funName string) {
-	//  node.Decl.(*ast.AssignStmt).Rhs[0].X.Type.
-	// node.Decl.(*ast.AssignStmt).Rhs[0].X.Type.(*ast.SelectorExpr).X.Name
-	// node.Decl.(*ast.AssignStmt).Rhs[0].X.Type.(*ast.SelectorExpr).Sel.Name
-	assignStmt, ok := node.Decl.(*ast.AssignStmt)
-	if !ok {
-		return "", ""
-	}
-
-	// 判断AssignStmt是否为nil
-	if assignStmt.Rhs == nil || len(assignStmt.Rhs) == 0 {
-		return "", ""
-	}
-
-	unaryExpr, ok := assignStmt.Rhs[0].(*ast.UnaryExpr)
-	if !ok {
-		return "", ""
-	}
-
-	// 判断UnaryExpr是否为nil
-	if unaryExpr.X == nil {
-		return "", ""
-	}
-
-	compositeLit, ok := unaryExpr.X.(*ast.CompositeLit)
-	if !ok {
-		return "", ""
-	}
-
-	// 判断CompositeLit是否为nil
-	if compositeLit.Type == nil {
-		return "", ""
-	}
-
-	selectorExpr, ok := compositeLit.Type.(*ast.SelectorExpr)
-	if !ok {
-		return "", ""
-	}
-
-	// 判断SelectorExpr是否为nil
-	if selectorExpr.X == nil {
-		return "", ""
-	}
-
-	ident, ok := selectorExpr.X.(*ast.Ident)
-	if !ok {
-		return "", ""
-	}
-
-	if ident.Name != "" {
-		packagesName = ident.Name
-	}
-	// if ident.Sel != nil {
-	// 	funName = ident.Sel.Name
-	// }
-	if selectorExpr.Sel != nil {
-		funName = selectorExpr.Sel.Name
-	}
-	fmt.Println("-->", packagesName, funName)
-	if packagesName == "" || packagesName == " " {
-		fmt.Println("----> 这里为空")
-	}
-	// fmt.Println(node.Decl.(*ast.AssignStmt).Rhs[0].(*ast.UnaryExpr).X.(*ast.CompositeLit).Type.(*ast.SelectorExpr).X.(*ast.Ident).Name)
-	return
-}
-func getAstIdent(node *ast.Ident) string {
-	if node != nil {
-		return node.Name
-	}
-	return ""
-}
-func findKeyNode(node ast.Node, fset *token.FileSet, file map[string][]string, pac string, strFile map[string]map[FuncInfo]bool) *ast.AssignStmt {
+func findKeyNode(node ast.Node, fset *token.FileSet, file map[string][]string, pac string, strFile map[string]map[FuncInfo]bool, callerImport map[string]map[CallerImport]bool, codePath string) *ast.AssignStmt {
 
 	switch v := node.(type) {
 
@@ -434,6 +328,19 @@ func findKeyNode(node ast.Node, fset *token.FileSet, file map[string][]string, p
 		}
 
 	case *ast.ImportSpec:
+		rename, origin := astTool.GetPackageImportSignel(v, moduleName)
+		var tmp CallerImport
+		if rename != "" || origin != "" {
+			tmp = CallerImport{
+				Rename: rename,
+				Origin: origin,
+			}
+			tmpN := make(map[CallerImport]bool, 0)
+			tmpN[tmp] = true
+			callerImport[codePath] = tmpN
+		}
+		fmt.Println(codePath, "rename:", rename, ", origin:", origin)
+
 		fuc := astTool.GetPackageImport(v, moduleName)
 		_, ok := file[pac]
 		if !ok {
